@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spider Grid Game</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom right, #111, #333);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .game--title {
+      font-size: 40px;
+      margin-top: 20px;
+      color: #f39c12;
+      text-shadow: 2px 2px 4px #000;
+    }
+
+    .instructions {
+      max-width: 600px;
+      margin: 20px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #f39c12;
+      border-radius: 8px;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      grid-template-rows: repeat(3, 100px);
+      gap: 5px;
+      margin: 20px 0;
+    }
+
+    .cell {
+      width: 100px;
+      height: 100px;
+      background-color: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      border: 2px solid #f39c12;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.2s;
+    }
+
+    .cell:hover {
+      background-color: #333;
+      transform: scale(1.05);
+    }
+
+    .highlight {
+      background-color: #ffcc00 !important;
+      transform: scale(1.05);
+      box-shadow: 0 0 10px #f39c12;
+    }
+
+    #display {
+      font-size: 20px;
+      margin-bottom: 15px;
+    }
+
+    #reload, #pvp, #pvc {
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #f39c12;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 5px;
+    }
+
+    #reload:hover, #pvp:hover, #pvc:hover {
+      background-color: #e67e22;
+    }
+  </style>
+</head>
+<body>
+  <div class="game--title">Spider Grid Game</div>
+  <div class="instructions">
+    <strong>Objective:</strong> Get all your spiders in a straight line (horizontal, vertical, or diagonal) anywhere except the original starting row to win.<br /><br />
+    <strong>Rules:</strong>
+    <ul>
+      <li>🕷️ Player 1 starts at the bottom row.</li>
+      <li>🕸️ Player 2 starts at the top row.</li>
+      <li>You can move to any adjacent empty cell (up, down, left, right).</li>
+      <li>You may move into the center (if empty) from the corners.</li>
+      <li>If you're in the center, you can move to <strong>any empty cell</strong> on the board.</li>
+      <li>Starting rows do not count as a win condition.</li>
+      <li>You cannot move diagonally or jump over pieces.</li>
+      <li>First player to align all their spiders in a valid row wins!</li>
+    </ul>
+  </div>
+
+  <div>
+    <button id="pvp">Player vs Player</button>
+    <button id="pvc">Player vs Computer</button>
+  </div>
+  <div id="board"></div>
+  <div id="display">Choose a mode to start</div>
+  <button id="reload">Restart</button>
+
+  <script>
+    const board = document.getElementById('board');
+    const display = document.getElementById('display');
+    const reloadButton = document.getElementById('reload');
+    const pvpButton = document.getElementById('pvp');
+    const pvcButton = document.getElementById('pvc');
+
+    const symbols = { 1: '🕷️', 2: '🕸️' };
+    let boardState = Array(3).fill(null).map(() => Array(3).fill(null));
+    let currentPlayer = 1;
+    let selected = null;
+    let mode = null; // 'pvp' or 'pvc'
+
+    const clearHighlights = () => {
+      document.querySelectorAll('.cell').forEach(c => c.classList.remove('highlight'));
+    };
+
+    const showValidMoves = (r, c) => {
+      clearHighlights();
+
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+      if (r === 1 && c === 1) {
+        for (let i = 0; i < 3; i++) {
+          for (let j = 0; j < 3; j++) {
+            if (!(i === 1 && j === 1) && boardState[i][j] === null) {
+              document.getElementById(`${i}_${j}`).classList.add('highlight');
+            }
+          }
+        }
+      } else {
+        dirs.forEach(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < 3 && nc >= 0 && nc < 3 && boardState[nr][nc] === null) {
+            document.getElementById(`${nr}_${nc}`).classList.add('highlight');
+          }
+        });
+
+        const corners = [[0,0],[0,2],[2,0],[2,2]];
+        corners.forEach(([cr, cc]) => {
+          if (r === cr && c === cc && boardState[1][1] === null) {
+            document.getElementById('1_1').classList.add('highlight');
+          }
+        });
+      }
+    };
+
+    const checkWin = (player) => {
+      const startRow = player === 1 ? 2 : 0;
+      for (let i = 0; i < 3; i++) {
+        if (i !== startRow && boardState[i].every(cell => cell === player)) return true;
+      }
+      for (let i = 0; i < 3; i++) {
+        if (boardState[0][i] === player && boardState[1][i] === player && boardState[2][i] === player) return true;
+      }
+      if ((boardState[0][0] === player && boardState[1][1] === player && boardState[2][2] === player) ||
+          (boardState[0][2] === player && boardState[1][1] === player && boardState[2][0] === player)) {
+        if (startRow !== 1) return true;
+      }
+      return false;
+    };
+
+    const handleClick = (r, c) => {
+      if (!mode) return;
+      const value = boardState[r][c];
+      const cell = document.getElementById(`${r}_${c}`);
+
+      if (selected) {
+        const [sr, sc] = selected;
+        if (cell.classList.contains('highlight')) {
+          boardState[r][c] = currentPlayer;
+          boardState[sr][sc] = null;
+          document.getElementById(`${r}_${c}`).innerHTML = symbols[currentPlayer];
+          document.getElementById(`${sr}_${sc}`).innerHTML = '';
+          selected = null;
+          clearHighlights();
+
+          if (checkWin(currentPlayer)) {
+            display.innerText = `Player ${currentPlayer} Wins!`;
+            disableBoard();
+            return;
+          }
+
+          currentPlayer = currentPlayer === 1 ? 2 : 1;
+          display.innerText = `Player ${currentPlayer}'s Turn`;
+
+          if (mode === 'pvc' && currentPlayer === 2) {
+            setTimeout(computerMove, 500);
+          }
+        } else {
+          selected = null;
+          clearHighlights();
+        }
+      } else if (value === currentPlayer) {
+        selected = [r, c];
+        showValidMoves(r, c);
+      }
+    };
+
+    const computerMove = () => {
+      const moves = [];
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          if (boardState[r][c] === 2) {
+            const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+            for (let [dr,dc] of dirs) {
+              const nr = r + dr, nc = c + dc;
+              if (nr >= 0 && nr < 3 && nc >= 0 && nc < 3 && boardState[nr][nc] === null) {
+                moves.push({ from: [r, c], to: [nr, nc] });
+              }
+            }
+            if ((r === 0 && (c === 0 || c === 2)) && boardState[1][1] === null) {
+              moves.push({ from: [r, c], to: [1, 1] });
+            }
+          }
+        }
+      }
+      if (moves.length > 0) {
+        const move = moves[Math.floor(Math.random() * moves.length)];
+        const [sr, sc] = move.from;
+        const [dr, dc] = move.to;
+        boardState[dr][dc] = 2;
+        boardState[sr][sc] = null;
+        document.getElementById(`${dr}_${dc}`).innerHTML = symbols[2];
+        document.getElementById(`${sr}_${sc}`).innerHTML = '';
+
+        if (checkWin(2)) {
+          display.innerText = `Computer Wins!`;
+          disableBoard();
+        } else {
+          currentPlayer = 1;
+          display.innerText = `Player 1's Turn`;
+        }
+      }
+    };
+
+    const disableBoard = () => {
+      document.querySelectorAll('.cell').forEach(cell => cell.style.pointerEvents = 'none');
+    };
+
+    const enableBoard = () => {
+      document.querySelectorAll('.cell').forEach(cell => cell.style.pointerEvents = 'auto');
+    };
+
+    const initBoard = () => {
+      board.innerHTML = '';
+      boardState = Array(3).fill(null).map(() => Array(3).fill(null));
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.id = `${r}_${c}`;
+
+          if (r === 0) {
+            cell.innerHTML = symbols[2];
+            boardState[r][c] = 2;
+          } else if (r === 2) {
+            cell.innerHTML = symbols[1];
+            boardState[r][c] = 1;
+          }
+
+          cell.addEventListener('click', () => handleClick(r, c));
+          board.appendChild(cell);
+        }
+      }
+    };
+
+    reloadButton.addEventListener('click', () => {
+      selected = null;
+      currentPlayer = 1;
+      display.innerText = `Player 1's Turn`;
+      enableBoard();
+      initBoard();
+    });
+
+    pvpButton.addEventListener('click', () => {
+      mode = 'pvp';
+      selected = null;
+      currentPlayer = 1;
+      display.innerText = `Player 1's Turn`;
+      enableBoard();
+      initBoard();
+    });
+
+    pvcButton.addEventListener('click', () => {
+      mode = 'pvc';
+      selected = null;
+      currentPlayer = 1;
+      display.innerText = `Player 1's Turn`;
+      enableBoard();
+      initBoard();
+    });
+  </script>
+</body>
+</html>
